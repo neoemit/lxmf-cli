@@ -545,7 +545,7 @@ class LXMFClient:
             pass
         
         return None
-    
+            
     def on_message_received(self, message):
         """Callback when message is received"""
         try:
@@ -561,9 +561,6 @@ class LXMFClient:
             
             # Get display name using our helper
             sender_display_name = self.get_lxmf_display_name(source_hash_str)
-
-            # Visual notification
-            self.notify_new_message()
             
             msg_data = {
                 'timestamp': message.timestamp,
@@ -583,17 +580,27 @@ class LXMFClient:
             
             sender_display = self.format_contact_display(msg_data['source_hash'], show_hash=True)
             
-            print(f"\n{'='*60}")
+            # === TRIGGER NOTIFICATION ===
+            self.notify_new_message()
+            
+            # Get responsive width
+            import shutil
+            try:
+                width = min(shutil.get_terminal_size().columns, 60)
+            except:
+                width = 60
+            
+            print(f"\n{'='*width}")
             self._print_color(f"📨 NEW MESSAGE from {sender_display}", Fore.GREEN + Style.BRIGHT)
-            print(f"{'='*60}")
+            print(f"{'='*width}")
             print(f"Time: {datetime.fromtimestamp(message.timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
             if title:
                 print(f"Title: {title}")
             if content:
                 print(f"\n{content}")
-            print(f"{'='*60}")
+            print(f"{'='*width}")
             self._print_color("💡 Type 'reply <message>' or 're <message>' to respond", Fore.CYAN)
-            print(f"{'='*60}\n")
+            print(f"{'='*width}\n")
             print("> ", end="", flush=True)
         
         except Exception as e:
@@ -601,7 +608,7 @@ class LXMFClient:
             import traceback
             traceback.print_exc()
             print("> ", end="", flush=True)
-    
+
     def load_contacts(self):
         """Load contacts from file"""
         if os.path.exists(self.contacts_file):
@@ -1029,7 +1036,7 @@ class LXMFClient:
             import traceback
             traceback.print_exc()
             return False
-    
+
     def on_delivery(self, message):
         """Callback for successful delivery"""
         dest_hash = RNS.prettyhexrep(message.destination_hash)
@@ -1074,13 +1081,99 @@ class LXMFClient:
 
         print()
         self._print_color(f"❌ Delivery failed to {recipient_str}{time_str}", Fore.RED + Style.BRIGHT)
-        print("> ", end="", flush=True)
+        print("> ", end="", flush=True)    
+
+    def show_stats(self):
+        """Show messaging statistics"""
+        with self.messages_lock:
+            messages_copy = self.messages.copy()
+        
+        if not messages_copy:
+            print("\nNo messages yet\n")
+            return
+        
+        import shutil
+        try:
+            width = min(shutil.get_terminal_size().columns, 80)
+            is_mobile = width < 70
+        except:
+            width = 80
+            is_mobile = False
+        
+        # Calculate overall stats
+        total_sent = sum(1 for msg in messages_copy if msg['direction'] == 'outbound')
+        total_received = sum(1 for msg in messages_copy if msg['direction'] == 'inbound')
+        total_messages = len(messages_copy)
+        
+        # Calculate per-user stats
+        user_stats = {}
+        
+        for msg in messages_copy:
+            if msg['direction'] == 'outbound':
+                hash_key = msg.get('destination_hash', 'unknown')
+            else:
+                hash_key = msg.get('source_hash', 'unknown')
+            
+            if hash_key not in user_stats:
+                user_stats[hash_key] = {'sent': 0, 'received': 0, 'total': 0}
+            
+            if msg['direction'] == 'outbound':
+                user_stats[hash_key]['sent'] += 1
+            else:
+                user_stats[hash_key]['received'] += 1
+            
+            user_stats[hash_key]['total'] += 1
+        
+        # Display overall stats
+        print(f"\n{'='*width}")
+        self._print_color("MESSAGING STATISTICS", Fore.CYAN + Style.BRIGHT)
+        print(f"{'='*width}")
+        print(f"\n{Fore.GREEN}Overall Stats:{Style.RESET_ALL}")
+        print(f"  Total Messages: {total_messages}")
+        print(f"  Sent: {total_sent}")
+        print(f"  Received: {total_received}")
+        print(f"  Unique Contacts: {len(user_stats)}")
+        
+        # Display per-user stats
+        print(f"\n{Fore.CYAN}Per-User Statistics:{Style.RESET_ALL}")
+        print(f"{'='*width}")
+        
+        # Sort by total messages descending
+        sorted_users = sorted(user_stats.items(), key=lambda x: x[1]['total'], reverse=True)
+        
+        if is_mobile:
+            # Mobile layout - vertical
+            for hash_str, stats in sorted_users:
+                contact_display = self.format_contact_display_short(hash_str)
+                print(f"\n{contact_display}")
+                print(f"  ↑{stats['sent']} ↓{stats['received']} (Total: {stats['total']})")
+        else:
+            # Desktop layout - table
+            print(f"{'Contact':<35} {'Sent':<8} {'Received':<10} {'Total':<10}")
+            print(f"{'-'*35} {'-'*8} {'-'*10} {'-'*10}")
+            
+            for hash_str, stats in sorted_users:
+                contact_display = self.format_contact_display_short(hash_str)
+                
+                # Truncate if too long
+                if len(contact_display) > 33:
+                    contact_display = contact_display[:30] + "..."
+                
+                print(f"{contact_display:<35} {stats['sent']:<8} {stats['received']:<10} {stats['total']:<10}")
+        
+        print(f"{'='*width}\n")
 
     def show_status(self):
         """Show current status and connection info"""
-        print(f"\n{'='*80}")
+        import shutil
+        try:
+            width = min(shutil.get_terminal_size().columns, 80)
+        except:
+            width = 80
+        
+        print(f"\n{'='*width}")
         self._print_color("SYSTEM STATUS", Fore.CYAN + Style.BRIGHT)
-        print(f"{'='*80}")
+        print(f"{'='*width}")
         
         # Identity info
         print(f"\n{Fore.GREEN}Identity:{Style.RESET_ALL}")
@@ -1122,69 +1215,7 @@ class LXMFClient:
         print(f"  Uptime: {hours}h {minutes}m")
         print(f"  Suppressed errors: {self.suppressed_errors}")
         
-        print(f"{'='*80}\n")
-
-    def show_stats(self):
-        """Show messaging statistics"""
-        with self.messages_lock:
-            messages_copy = self.messages.copy()
-        
-        if not messages_copy:
-            print("\nNo messages yet\n")
-            return
-        
-        # Calculate overall stats
-        total_sent = sum(1 for msg in messages_copy if msg['direction'] == 'outbound')
-        total_received = sum(1 for msg in messages_copy if msg['direction'] == 'inbound')
-        total_messages = len(messages_copy)
-        
-        # Calculate per-user stats
-        user_stats = {}
-        
-        for msg in messages_copy:
-            if msg['direction'] == 'outbound':
-                hash_key = msg.get('destination_hash', 'unknown')
-            else:
-                hash_key = msg.get('source_hash', 'unknown')
-            
-            if hash_key not in user_stats:
-                user_stats[hash_key] = {'sent': 0, 'received': 0, 'total': 0}
-            
-            if msg['direction'] == 'outbound':
-                user_stats[hash_key]['sent'] += 1
-            else:
-                user_stats[hash_key]['received'] += 1
-            
-            user_stats[hash_key]['total'] += 1
-        
-        # Display overall stats
-        print(f"\n{'='*80}")
-        self._print_color("MESSAGING STATISTICS", Fore.CYAN + Style.BRIGHT)
-        print(f"{'='*80}")
-        print(f"\n{Fore.GREEN}Overall Stats:{Style.RESET_ALL}")
-        print(f"  Total Messages: {total_messages}")
-        print(f"  Sent: {total_sent}")
-        print(f"  Received: {total_received}")
-        print(f"  Unique Contacts: {len(user_stats)}")
-        
-        # Display per-user stats
-        print(f"\n{Fore.CYAN}Per-User Statistics:{Style.RESET_ALL}")
-        print(f"{'='*80}")
-        print(f"{'Contact':<40} {'Sent':<10} {'Received':<10} {'Total':<10}")
-        print(f"{'-'*40} {'-'*10} {'-'*10} {'-'*10}")
-        
-        # Sort by total messages descending
-        sorted_users = sorted(user_stats.items(), key=lambda x: x[1]['total'], reverse=True)
-        
-        for hash_str, stats in sorted_users:
-            contact_display = self.format_contact_display_short(hash_str)
-            # Truncate if too long
-            if len(contact_display) > 38:
-                contact_display = contact_display[:35] + "..."
-            
-            print(f"{contact_display:<40} {stats['sent']:<10} {stats['received']:<10} {stats['total']:<10}")
-        
-        print(f"{'='*80}\n")
+        print(f"{'='*width}\n")
 
     def show_messages(self, limit=10, filter_hash=None):
         """Show recent messages, optionally filtered by user hash"""
@@ -1195,9 +1226,15 @@ class LXMFClient:
             print("\nNo messages yet\n")
             return
         
+        # Get responsive width
+        import shutil
+        try:
+            width = min(shutil.get_terminal_size().columns, 80)
+        except:
+            width = 80
+        
         # Filter by hash if provided
         if filter_hash:
-            # Normalize the filter hash
             clean_filter = filter_hash.replace(":", "").replace(" ", "").replace("<", "").replace(">", "").lower()
             filtered_messages = []
             
@@ -1208,7 +1245,6 @@ class LXMFClient:
                 else:
                     msg_hash = msg.get('source_hash', '')
                 
-                # Normalize the message hash
                 clean_msg_hash = msg_hash.replace(":", "").replace(" ", "").replace("<", "").replace(">", "").lower()
                 
                 if clean_msg_hash == clean_filter:
@@ -1224,13 +1260,16 @@ class LXMFClient:
         # Show messages
         if filter_hash:
             contact_display = self.format_contact_display_short(filter_hash)
-            print(f"\n{'='*80}")
-            self._print_color(f"CONVERSATION WITH {contact_display.upper()}", Fore.CYAN + Style.BRIGHT)
-            print(f"{'='*80}")
+            print(f"\n{'='*width}")
+            # Truncate contact name if too long for header
+            if len(contact_display) > width - 10:
+                contact_display = contact_display[:width-13] + "..."
+            self._print_color(f"CHAT: {contact_display.upper()}", Fore.CYAN + Style.BRIGHT)
+            print(f"{'='*width}")
         else:
-            print(f"\n{'='*80}")
-            self._print_color(f"RECENT MESSAGES (showing last {min(limit, len(messages_copy))})", Fore.CYAN + Style.BRIGHT)
-            print(f"{'='*80}")
+            print(f"\n{'='*width}")
+            self._print_color(f"RECENT MESSAGES ({min(limit, len(messages_copy))})", Fore.CYAN + Style.BRIGHT)
+            print(f"{'='*width}")
         
         # Display messages
         display_messages = messages_copy[-limit:] if not filter_hash else messages_copy
@@ -1251,7 +1290,7 @@ class LXMFClient:
                     if msg.get('title'):
                         print(f"Title: {msg['title']}")
                     print(f"\n{msg.get('content', '')}\n")
-                    print(f"{'-'*80}")
+                    print(f"{'-'*width}")
                 else:
                     # In list view, show preview
                     print(f"\n[{idx}] {ts} {direction} {contact}")
@@ -1267,19 +1306,15 @@ class LXMFClient:
             except Exception as e:
                 print(f"\n[{idx}] [Error displaying message: {e}]")
         
-        print(f"\n{'='*80}")
+        print(f"\n{'='*width}")
         
         if filter_hash:
-            # Set the reply target to this user when viewing their conversation
-            # Store both hash and name for reply functionality
             self.last_sender_hash = filter_hash
             self.last_sender_name = self.get_contact_name_by_hash(filter_hash)
             
-            self._print_color(f"\n💡 Reply target set to: {contact_display}", Fore.GREEN)
-            self._print_color("   Type 'reply <message>' or 're <message>' to respond", Fore.CYAN)
+            self._print_color(f"\n💡 Reply: 're <msg>'", Fore.GREEN)
         else:
-            self._print_color("💡 Tip1: View conversations: 'messages list'", Fore.YELLOW)
-            self._print_color("💡 Tip2: View conversation with specific user: 'messages user <#>'", Fore.YELLOW)
+            self._print_color("💡 Tip: 'm list' or 'm user <#>'", Fore.YELLOW)
         
         print()
 
@@ -1291,6 +1326,14 @@ class LXMFClient:
         if not messages_copy:
             print("\nNo messages yet\n")
             return
+        
+        import shutil
+        try:
+            width = min(shutil.get_terminal_size().columns, 90)
+            is_mobile = width < 70
+        except:
+            width = 90
+            is_mobile = False
         
         # Build user list with message counts
         user_data = {}
@@ -1315,7 +1358,7 @@ class LXMFClient:
                     'received': 0,
                     'last_message_time': 0,
                     'index': conv_index,
-                    'display_hash': hash_key  # Keep original format for display
+                    'display_hash': hash_key
                 }
             
             if msg['direction'] == 'outbound':
@@ -1323,48 +1366,65 @@ class LXMFClient:
             else:
                 user_data[clean_hash]['received'] += 1
             
-            # Track most recent message
             if msg['timestamp'] > user_data[clean_hash]['last_message_time']:
                 user_data[clean_hash]['last_message_time'] = msg['timestamp']
         
-        # Sort by fixed index (not by recent message)
+        # Sort by fixed index
         sorted_users = sorted(user_data.items(), key=lambda x: x[1]['index'])
         
-        print(f"\n{'='*90}")
+        print(f"\n{'='*width}")
         self._print_color("MESSAGE CONVERSATIONS", Fore.CYAN + Style.BRIGHT)
-        print(f"{'='*90}")
-        print(f"{'#':<5} {'Contact':<40} {'Sent':<8} {'Received':<10} {'Last Message':<15}")
-        print(f"{'-'*5} {'-'*40} {'-'*8} {'-'*10} {'-'*15}")
+        print(f"{'='*width}")
         
-        for clean_hash, data in sorted_users:
-            conv_index = data['index']
-            hash_str = data['display_hash']
-            contact_display = self.format_contact_display_short(hash_str)
+        if is_mobile:
+            # Mobile layout - vertical list
+            for clean_hash, data in sorted_users:
+                conv_index = data['index']
+                hash_str = data['display_hash']
+                contact_display = self.format_contact_display_short(hash_str)
+                
+                time_diff = time.time() - data['last_message_time']
+                if time_diff < 60:
+                    time_str = "now"
+                elif time_diff < 3600:
+                    time_str = f"{int(time_diff/60)}m ago"
+                elif time_diff < 86400:
+                    time_str = f"{int(time_diff/3600)}h ago"
+                else:
+                    time_str = f"{int(time_diff/86400)}d ago"
+                
+                print(f"\n[{conv_index}] {Fore.CYAN}{contact_display}{Style.RESET_ALL}")
+                print(f"    ↑{data['sent']} ↓{data['received']} • {time_str}")
+        else:
+            # Desktop layout - table
+            print(f"\n{'#':<5} {'Contact':<35} {'Sent':<6} {'Recv':<6} {'Last':<12}")
+            print(f"{'-'*5} {'-'*35} {'-'*6} {'-'*6} {'-'*12}")
             
-            # Truncate if too long
-            if len(contact_display) > 38:
-                contact_display = contact_display[:35] + "..."
-            
-            # Format last message time
-            time_diff = time.time() - data['last_message_time']
-            if time_diff < 60:
-                time_str = "just now"
-            elif time_diff < 3600:
-                minutes = int(time_diff / 60)
-                time_str = f"{minutes}m ago"
-            elif time_diff < 86400:
-                hours = int(time_diff / 3600)
-                time_str = f"{hours}h ago"
-            else:
-                days = int(time_diff / 86400)
-                time_str = f"{days}d ago"
-            
-            print(f"{conv_index:<5} {contact_display:<40} {data['sent']:<8} {data['received']:<10} {time_str:<15}")
+            for clean_hash, data in sorted_users:
+                conv_index = data['index']
+                hash_str = data['display_hash']
+                contact_display = self.format_contact_display_short(hash_str)
+                
+                # Truncate contact name if too long
+                if len(contact_display) > 33:
+                    contact_display = contact_display[:30] + "..."
+                
+                time_diff = time.time() - data['last_message_time']
+                if time_diff < 60:
+                    time_str = "just now"
+                elif time_diff < 3600:
+                    time_str = f"{int(time_diff/60)}m ago"
+                elif time_diff < 86400:
+                    time_str = f"{int(time_diff/3600)}h ago"
+                else:
+                    time_str = f"{int(time_diff/86400)}d ago"
+                
+                print(f"{conv_index:<5} {contact_display:<35} {data['sent']:<6} {data['received']:<6} {time_str:<12}")
         
-        print(f"{'='*90}")
+        print(f"{'='*width}")
         self._print_color("\n💡 Commands:", Fore.YELLOW)
-        print(f"  {Fore.CYAN}messages user <#>{Fore.WHITE} - View full conversation with user by number")
-        print(f"  {Fore.CYAN}messages [count]{Fore.WHITE}  - Show recent messages across all users")
+        print(f"  m user <#> - View conversation")
+        print(f"  m [count]  - Recent messages")
         print()
         
         return sorted_users
@@ -1571,10 +1631,18 @@ class LXMFClient:
 
     def show_settings_menu(self):
         """Show interactive settings menu"""
+        import shutil
+        
         while True:
-            print(f"\n{'='*70}")
+            # Get responsive width
+            try:
+                width = min(shutil.get_terminal_size().columns, 70)
+            except:
+                width = 70
+            
+            print(f"\n{'='*width}")
             self._print_color("SETTINGS MENU", Fore.YELLOW + Style.BRIGHT)
-            print(f"{'='*70}")
+            print(f"{'='*width}")
             
             print(f"\n{Fore.CYAN}General Settings:{Style.RESET_ALL}")
             print(f"  [1] Display Name: {Fore.GREEN}{self.display_name}{Style.RESET_ALL}")
@@ -1592,7 +1660,7 @@ class LXMFClient:
             print("  [b]   - Back to main menu")
             print("  [s]   - Save and exit")
             
-            print(f"{'='*70}")
+            print(f"{'='*width}")
             
             choice = input("\nSelect option: ").strip().lower()
             
@@ -1751,6 +1819,7 @@ class LXMFClient:
         """Visual and audio notification for new message - respects user settings"""
         import shutil
         import platform
+        import os
         
         # === SOUND NOTIFICATION ===
         if self.notify_sound or self.notify_bell:
@@ -1785,6 +1854,7 @@ class LXMFClient:
                             time.sleep(0.1)
                 
                 elif system == 'Windows':
+                    # Windows notifications
                     if self.notify_sound:
                         try:
                             import winsound
@@ -1800,19 +1870,26 @@ class LXMFClient:
                             for freq, duration in melody:
                                 winsound.Beep(freq, duration)
                                 time.sleep(0.01)
-                            
-                        except:
+                        except ImportError:
+                            # winsound not available, use bell
                             if self.notify_bell:
                                 for _ in range(3):
                                     print("\a", end="", flush=True)
                                     time.sleep(0.1)
-                    else:
-                        if self.notify_bell:
-                            for _ in range(3):
-                                print("\a", end="", flush=True)
-                                time.sleep(0.1)
+                        except Exception as e:
+                            # Any other error, fallback to bell
+                            if self.notify_bell:
+                                for _ in range(3):
+                                    print("\a", end="", flush=True)
+                                    time.sleep(0.1)
+                    elif self.notify_bell:
+                        # Only bell, no sound
+                        for _ in range(3):
+                            print("\a", end="", flush=True)
+                            time.sleep(0.1)
                 
                 elif system == 'Linux':
+                    # Linux notifications
                     if self.notify_sound:
                         try:
                             # Try system sound
@@ -1836,47 +1913,51 @@ class LXMFClient:
                             time.sleep(0.1)
             
             except Exception as e:
-                # Fallback to bell if available
+                # Ultimate fallback to bell if available
                 if self.notify_bell:
-                    for _ in range(3):
-                        print("\a", end="", flush=True)
-                        time.sleep(0.1)
+                    try:
+                        for _ in range(3):
+                            print("\a", end="", flush=True)
+                            time.sleep(0.1)
+                    except:
+                        pass
         
         # === VISUAL NOTIFICATION ===
-        if self.notify_visual and COLOR_ENABLED:
-            try:
-                terminal_width = shutil.get_terminal_size().columns
-            except:
-                terminal_width = 80
-            
-            # Synchronized visual - snappy ripple effect
-            ripple_sequence = [
-                (Fore.GREEN, '░', 0.05),
-                (Fore.GREEN, '▒', 0.05),
-                (Fore.GREEN, '▓', 0.05),
-                (Fore.CYAN, '█', 0.08),
-                (Fore.YELLOW, '▓', 0.06),
-                (Fore.GREEN, '▒', 0.05),
-            ]
-            
-            for color, char, duration in ripple_sequence:
-                print(f"\r{color}{Style.BRIGHT}{char * terminal_width}{Style.RESET_ALL}", end="", flush=True)
-                time.sleep(duration)
-            
-            # Message flash with emoji
-            is_termux = os.path.exists('/data/data/com.termux')
-            if is_termux:
-                msg = " 📱 NEW MESSAGE! "
+        if self.notify_visual:
+            if COLOR_ENABLED:
+                try:
+                    terminal_width = shutil.get_terminal_size().columns
+                except:
+                    terminal_width = 80
+                
+                # Synchronized visual - snappy ripple effect
+                ripple_sequence = [
+                    (Fore.GREEN, '░', 0.05),
+                    (Fore.GREEN, '▒', 0.05),
+                    (Fore.GREEN, '▓', 0.05),
+                    (Fore.CYAN, '█', 0.08),
+                    (Fore.YELLOW, '▓', 0.06),
+                    (Fore.GREEN, '▒', 0.05),
+                ]
+                
+                for color, char, duration in ripple_sequence:
+                    print(f"\r{color}{Style.BRIGHT}{char * terminal_width}{Style.RESET_ALL}", end="", flush=True)
+                    time.sleep(duration)
+                
+                # Message flash with emoji
+                is_termux = os.path.exists('/data/data/com.termux')
+                if is_termux:
+                    msg = " 📱 NEW MESSAGE! "
+                else:
+                    msg = " 📬 NEW MESSAGE! "
+                
+                print(f"\r{Fore.GREEN}{Style.BRIGHT}{msg.center(terminal_width, '═')}{Style.RESET_ALL}", end="", flush=True)
+                time.sleep(0.18)
+                
+                # Clear
+                print(f"\r{' ' * terminal_width}", end="\r", flush=True)
             else:
-                msg = " 📬 NEW MESSAGE! "
-            
-            print(f"\r{Fore.GREEN}{Style.BRIGHT}{msg.center(terminal_width, '═')}{Style.RESET_ALL}", end="", flush=True)
-            time.sleep(0.18)
-            
-            # Clear
-            print(f"\r{' ' * terminal_width}", end="\r", flush=True)
-        elif self.notify_visual and not COLOR_ENABLED:
-            print("\n>>> NEW MESSAGE RECEIVED <<<\n")
+                print("\n>>> NEW MESSAGE RECEIVED <<<\n")
 
     def shutdown(self):
         """Clean shutdown"""
