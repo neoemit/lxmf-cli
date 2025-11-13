@@ -349,6 +349,8 @@ class LXMFClient:
     def list_plugins(self):
         """List all available plugins"""
         import shutil
+        import os
+        
         try:
             width = min(shutil.get_terminal_size().columns, 80)
         except:
@@ -358,18 +360,47 @@ class LXMFClient:
         self._print_color("PLUGINS", Fore.CYAN + Style.BRIGHT)
         print(f"{'='*width}")
         
-        if not self.plugins:
-            print("\nNo plugins loaded")
+        # Scan plugins directory for all .py files
+        available_plugins = {}
+        
+        if os.path.exists(self.plugins_dir):
+            for filename in os.listdir(self.plugins_dir):
+                if filename.endswith('.py') and not filename.startswith('_'):
+                    plugin_name = filename[:-3]
+                    available_plugins[plugin_name] = {
+                        'loaded': plugin_name in self.plugins,
+                        'enabled': self.plugins_enabled.get(plugin_name, True),
+                        'instance': self.plugins.get(plugin_name)
+                    }
+        
+        if not available_plugins:
+            print("\nNo plugins found")
             print(f"Place plugin files in: {self.plugins_dir}\n")
             return
         
-        print(f"\n{'Plugin':<20} {'Status':<10} {'Description'}")
-        print(f"{'-'*20} {'-'*10} {'-'*30}")
+        print(f"\n{'Plugin':<20} {'Status':<15} {'Description'}")
+        print(f"{'-'*20} {'-'*15} {'-'*30}")
         
-        for plugin_name, plugin in self.plugins.items():
-            status = f"{Fore.GREEN}Enabled{Style.RESET_ALL}" if self.plugins_enabled.get(plugin_name, True) else f"{Fore.RED}Disabled{Style.RESET_ALL}"
-            description = getattr(plugin, 'description', 'No description')
-            print(f"{plugin_name:<20} {status:<20} {description}")
+        for plugin_name, info in sorted(available_plugins.items()):
+            # Determine status
+            if info['loaded'] and info['enabled']:
+                status = f"{Fore.GREEN}Loaded{Style.RESET_ALL}"
+            elif info['enabled'] and not info['loaded']:
+                status = f"{Fore.YELLOW}Enabled (reload){Style.RESET_ALL}"
+            else:
+                status = f"{Fore.RED}Disabled{Style.RESET_ALL}"
+            
+            # Get description
+            if info['instance']:
+                description = getattr(info['instance'], 'description', 'No description')
+            else:
+                description = "Not loaded"
+            
+            # Truncate description if too long
+            if len(description) > 30:
+                description = description[:27] + "..."
+            
+            print(f"{plugin_name:<20} {status:<25} {description}")
         
         print(f"{'='*width}")
         self._print_color("\n💡 Commands:", Fore.YELLOW)
