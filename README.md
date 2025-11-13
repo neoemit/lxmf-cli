@@ -58,6 +58,7 @@ A powerful, cross-platform command-line interface for [LXMF](https://github.com/
 - **Enable/disable** - Control plugins without deleting files
 - **Hot reload** - Reload plugins without restarting the client
 - Examples: Echo bot, remote control, chat bots, custom commands
+- Included demo plugins: echo_bot.py , away_bot.py , keyword_alert.py 
 
 ### ⚙️ Customization
 - **Interactive settings menu** - Easy configuration without editing files
@@ -350,8 +351,531 @@ lxmf-client/
     ├── plugins_config.json         # Plugin enable/disable state
     └── lxmf_router/               # LXMF router data
 ```
+---
 
-## ⚙️ Configuration
+## 🔌 Extended Plugin System Info & Demo
+
+LXMF-CLI features a powerful plugin system that extends functionality with custom commands and automated behaviors. Plugins can process messages, add new commands, and integrate with external services.
+
+## 📦 Included Demo Plugins
+
+The client comes with several example plugins to get you started:
+
+### 1. 🤖 Echo Bot (`echo_bot.py`)
+
+Automatically replies to incoming messages with an echo of their content.
+
+**Features:**
+- Auto-replies with "🔄 Echo: <message>"
+- Toggle on/off without reloading
+- Won't echo your own messages
+- Won't echo empty messages
+- Respects blacklist (won't echo to blocked users)
+
+**Usage:**
+```bash
+# Check status
+> echo
+
+# Enable echo bot
+> echo on
+
+# Someone sends: "Hello!"
+# Bot replies: "🔄 Echo: Hello!"
+
+# Disable echo bot
+> echo off
+
+# Check status
+> echo status
+```
+
+**Use Cases:**
+- Testing message delivery
+- Auto-acknowledgment system
+- Creating a simple test bot
+- Demonstrating plugin capabilities
+
+---
+
+### 2. 🚫 Away Bot (`away_bot.py`)
+
+Sends automatic away messages when you're not available. Only replies once per person while away.
+
+**Features:**
+- Custom away messages
+- Tracks how long you've been away
+- One reply per sender (no spam)
+- Automatic away duration in response
+- Respects blacklist
+
+**Usage:**
+```bash
+# Enable with default message
+> away
+
+# Enable with custom message
+> away At lunch, back in 30 minutes
+> away In a meeting until 3pm
+> away On vacation, will respond next week
+
+# Someone sends you a message, they receive:
+# "🚫 At lunch, back in 30 minutes (away for 15 min)"
+
+# When you're back
+> back
+```
+
+**Output:**
+```bash
+> away At the dentist
+✓ Away mode ENABLED
+Away message: At the dentist
+💡 Use 'back' to disable
+
+[User sends message]
+[AWAY BOT] Auto-replied to Alice
+
+> back
+✓ Welcome back! (was away for 32 min)
+```
+
+**Use Cases:**
+- Automatic out-of-office replies
+- Status notifications
+- Reducing interruptions
+- Professional availability management
+
+---
+
+### 3. 🔔 Keyword Alert (`keyword_alert.py`)
+
+Get enhanced notifications when specific keywords appear in messages.
+
+**Features:**
+- Monitor multiple keywords simultaneously
+- Case-sensitive or case-insensitive matching
+- Extra notification alert (sound + visual)
+- Shows which keywords were found
+- Persistent keyword storage
+
+**Usage:**
+```bash
+# View current keywords
+> keyword
+> keywords
+
+# Add keywords to monitor
+> keyword add urgent
+> keyword add meeting
+> keyword add deadline
+> keyword add help needed
+
+# Add multi-word phrases
+> keyword add "project alpha"
+> keyword add security alert
+
+# Toggle case sensitivity
+> keyword case on     # Case sensitive
+> keyword case off    # Case insensitive (default)
+
+# Remove keywords
+> keyword remove urgent
+
+# Clear all keywords
+> keyword clear
+
+# List keywords
+> keyword list
+```
+
+**Example Alert:**
+When someone sends "We have an urgent meeting about the deadline":
+```
+============================================================
+🔔 KEYWORD ALERT from Alice
+Keywords found: urgent, meeting, deadline
+Message: We have an urgent meeting about the deadline
+============================================================
+[EXTRA NOTIFICATION TRIGGERED]
+```
+
+**Use Cases:**
+- Monitor important topics
+- Never miss critical messages
+- Track project mentions
+- Customer support prioritization
+- Emergency notifications
+
+---
+
+## 🎯 Plugin Management
+
+### Viewing Plugins
+```bash
+# List all plugins with status
+> plugin list
+
+# Output shows:
+Plugin               Status              Description
+-------------------- --------------- ------------------------------
+echo_bot             Loaded          Auto-reply bot - echoes re...
+away_bot             Loaded          Auto-reply when away from ...
+keyword_alert        Loaded          Alert on specific keywords...
+my_plugin            Disabled        My custom plugin
+```
+
+**Status meanings:**
+- **Loaded** (green): Active and running
+- **Enabled (reload)** (yellow): Enabled but needs `plugin reload`
+- **Disabled** (red): Not loaded
+
+### Enabling/Disabling Plugins
+```bash
+# Disable a plugin
+> plugin disable echo_bot
+✓ Plugin echo_bot disabled
+⚠ Use 'plugin reload' to deactivate
+
+# Reload to apply changes
+> plugin reload
+✓ Plugins reloaded
+
+# Enable a plugin
+> plugin enable echo_bot
+✓ Plugin echo_bot enabled
+⚠ Use 'plugin reload' to activate
+
+# Reload again
+> plugin reload
+✓ Plugins reloaded
+```
+
+---
+
+## 🛠️ Creating Your Own Plugin
+
+Plugins are Python files placed in `lxmf_client_storage/plugins/`. Here's a simple template:
+
+### Basic Plugin Template
+```python
+"""
+My Custom Plugin for LXMF-CLI
+Description of what your plugin does
+"""
+
+class Plugin:
+    def __init__(self, client):
+        """Initialize the plugin"""
+        self.client = client
+        self.commands = ['mycommand', 'mycmd']  # Commands this plugin handles
+        self.description = "What this plugin does"
+        print("My Plugin loaded!")
+    
+    def on_message(self, message, msg_data):
+        """
+        Called when a message is received
+        
+        Args:
+            message: The raw LXMF message object
+            msg_data: Dictionary with parsed message data:
+                - timestamp: When message was sent
+                - source_hash: Sender's hash
+                - content: Message text
+                - title: Message title (if any)
+                - direction: 'inbound' or 'outbound'
+                - display_name: Sender's display name
+        
+        Returns:
+            True: Suppress normal message notification
+            False: Allow normal message processing
+        """
+        # Only process incoming messages
+        if msg_data['direction'] == 'outbound':
+            return False
+        
+        content = msg_data.get('content', '')
+        source_hash = msg_data['source_hash']
+        
+        # Your message processing logic here
+        
+        return False  # Allow normal notification
+    
+    def handle_command(self, cmd, parts):
+        """
+        Handle custom commands
+        
+        Args:
+            cmd: The command name (e.g., 'mycommand')
+            parts: List of command parts split by spaces
+                   parts[0] = command name
+                   parts[1] = first argument
+                   parts[2] = remaining text (may contain spaces)
+        """
+        if cmd == 'mycommand':
+            if len(parts) < 2:
+                print("Usage: mycommand <argument>")
+                return
+            
+            argument = parts[1]
+            print(f"You ran mycommand with: {argument}")
+```
+
+### Example: Simple Counter Plugin
+```python
+"""
+Message Counter Plugin - Counts messages per user
+"""
+
+class Plugin:
+    def __init__(self, client):
+        self.client = client
+        self.commands = ['count', 'counter']
+        self.description = "Count messages per user"
+        self.message_counts = {}
+    
+    def on_message(self, message, msg_data):
+        """Count each received message"""
+        if msg_data['direction'] == 'inbound':
+            source = msg_data['source_hash']
+            self.message_counts[source] = self.message_counts.get(source, 0) + 1
+        return False
+    
+    def handle_command(self, cmd, parts):
+        """Show message counts"""
+        if not self.message_counts:
+            print("No messages counted yet")
+            return
+        
+        print("\nMessage Counts:")
+        for hash_str, count in sorted(self.message_counts.items(), 
+                                      key=lambda x: x[1], reverse=True):
+            name = self.client.format_contact_display_short(hash_str)
+            print(f"  {name}: {count} messages")
+        print()
+```
+
+Save as `lxmf_client_storage/plugins/counter.py` and reload!
+
+---
+
+## 🔑 Plugin API Reference
+
+### Available Client Methods
+
+Your plugin has access to the `self.client` object with these useful methods:
+
+#### Messaging
+```python
+# Send a message
+self.client.send_message(dest_hash, message_text)
+
+# Check if address is blacklisted
+self.client.is_blacklisted(dest_hash)
+
+# Resolve contact name/number to hash
+dest_hash = self.client.resolve_contact_or_hash("alice")  # or "5" or hash
+```
+
+#### Contact Management
+```python
+# Get contact display name
+name = self.client.format_contact_display_short(dest_hash)
+name = self.client.format_contact_display(dest_hash, show_hash=True)
+
+# Get LXMF display name from announces
+display_name = self.client.get_lxmf_display_name(dest_hash)
+
+# Get contact name by hash
+contact_name = self.client.get_contact_name_by_hash(dest_hash)
+```
+
+#### Notifications
+```python
+# Trigger notification (sound/visual/bell based on user settings)
+self.client.notify_new_message()
+```
+
+#### Output Helpers
+```python
+# Colored output
+self.client._print_success("Success message")
+self.client._print_error("Error message")
+self.client._print_warning("Warning message")
+self.client._print_color("Custom message", self.client.Fore.CYAN)
+```
+
+#### Data Access
+```python
+# Access contacts (read-only recommended)
+for name, data in self.client.contacts.items():
+    hash_str = data['hash']
+    index = data['index']
+
+# Access messages (with lock)
+with self.client.messages_lock:
+    messages = self.client.messages.copy()
+
+# Access peers (with lock)
+with self.client.peers_lock:
+    peers = self.client.announced_peers.copy()
+```
+
+---
+
+## 💡 Plugin Ideas
+
+Here are some ideas for plugins you could create:
+
+### Communication
+- **Translation Bot** - Auto-translate incoming messages
+- **Forwarding Bot** - Forward messages to another contact
+- **Group Chat** - Broadcast messages to multiple contacts
+- **Read Receipt** - Send automatic read confirmations
+
+### Automation
+- **Reminder Bot** - Set time-based reminders
+- **Task Manager** - Track TODO items via messages
+- **Note Taker** - Save important messages as notes
+- **Auto-Responder** - Context-aware automatic replies
+
+### Integration
+- **Weather Bot** - Get weather updates via messages
+- **Web API Bridge** - Send messages to web services
+- **Database Logger** - Log messages to SQLite
+- **Email Bridge** - Forward messages to email
+
+### Utilities
+- **Message Encryption** - Additional encryption layer
+- **Markdown Parser** - Render formatted messages
+- **File Transfer Helper** - Enhanced file sharing
+- **Message Search** - Advanced search functionality
+
+### Security
+- **Rate Limiter** - Limit messages per sender
+- **Content Filter** - Block unwanted content types
+- **Whitelist Mode** - Only accept from approved senders
+- **Audit Logger** - Detailed activity logging
+
+---
+
+## 📁 Plugin File Structure
+```
+lxmf_client_storage/
+├── plugins/
+│   ├── echo_bot.py          # Demo: Echo responses
+│   ├── away_bot.py          # Demo: Away messages
+│   ├── keyword_alert.py     # Demo: Keyword monitoring
+│   ├── my_plugin.py         # Your custom plugin
+│   └── another_plugin.py    # Another custom plugin
+├── plugins_config.json      # Plugin enable/disable state
+├── antispam_config.json     # Plugin-specific configs
+└── activity_log.json        # Plugin-created data
+```
+
+---
+
+## 🐛 Debugging Plugins
+
+### Common Issues
+
+**Plugin not loading:**
+```bash
+# Check for syntax errors
+python -m py_compile lxmf_client_storage/plugins/my_plugin.py
+
+# Check plugin list
+> plugin list
+
+# Reload with error output
+> plugin reload
+```
+
+**Plugin loaded but command not working:**
+- Ensure command is in `self.commands` list
+- Check that `handle_command` is defined
+- Verify command name spelling
+
+**Message handler not called:**
+- Ensure `on_message` method is defined correctly
+- Check return value (True = suppress, False = allow)
+- Verify plugin is enabled: `plugin list`
+
+### Debug Tips
+
+Add print statements to track execution:
+```python
+def on_message(self, message, msg_data):
+    print(f"[MY PLUGIN] Received message from {msg_data['source_hash']}")
+    # Your code here
+    return False
+
+def handle_command(self, cmd, parts):
+    print(f"[MY PLUGIN] Command: {cmd}, Parts: {parts}")
+    # Your code here
+```
+
+---
+
+## ⚠️ Plugin Best Practices
+
+### Do's ✅
+- Always handle exceptions gracefully
+- Return `False` from `on_message` unless suppressing notification
+- Save plugin state to files in `client.storage_path`
+- Use `self.client` methods instead of direct data access
+- Add helpful error messages and usage instructions
+- Include a clear description
+
+### Don'ts ❌
+- Don't block the main thread with long operations
+- Don't modify client data structures directly
+- Don't create infinite loops
+- Don't store sensitive data in plain text
+- Don't trust user input without validation
+- Don't forget to handle missing arguments
+
+### Security Considerations
+
+- Validate all input from messages
+- Don't execute arbitrary code from messages (unless intentional like remote_cmd)
+- Be careful with file operations
+- Consider rate limiting for automated actions
+- Respect the blacklist for automated responses
+- Don't leak sensitive information in error messages
+
+---
+
+## 🤝 Contributing Plugins
+
+Have a useful plugin? Share it with the community!
+
+1. **Test thoroughly** - Ensure it works on different platforms
+2. **Document usage** - Include clear instructions
+3. **Add examples** - Show how to use it
+4. **Handle errors** - Graceful failure modes
+5. **Comment your code** - Help others understand
+6. **Submit a PR** - Share on GitHub
+
+---
+
+## 📝 Plugin License
+
+Demo plugins are included under the same MIT license as LXMF-CLI. Your custom plugins can use any license you choose.
+
+---
+
+**Next Steps:**
+- Try the demo plugins
+- Create your first custom plugin
+- Share your plugins with the community
+- Check out the API reference for advanced features
+
+Happy plugin development! 🚀
+
+---
+
+## ⚙️ LXMF-Cli Configuration
 
 ### Settings Menu
 Access with `settings` command:
@@ -491,12 +1015,11 @@ For questions, issues, or suggestions:
 | Contact Management | ✅ | ✅ | ✅ | ✅ |
 | Message History | ✅ | ✅ | ✅ | ✅ |
 | Peer Discovery | ✅ | ✅ | ✅ | ✅ |
-| Stamp Cost | ✅ | ❌ | ✅ | ✅ |
 | Blacklist | ✅ | ❌ | ❌ | ❌ |
-| Plugin System | ✅ | ❌ | ❌ | ❌ |
-| Mobile (Termux) | ✅ | ✅ | ✅ | ❌ |
+| Plugin System | ✅ | ❌ | ✅ | ❌ |
+| Mobile (Termux) | ✅ | ✅ | ✅ | ✅ |
 | Custom Notifications | ✅ | ❌ | ✅ | ✅ |
-| Cross-Platform | ✅ | ✅ | ⚠️  | ⚠️  |
+| Cross-Platform | ✅ | ✅ | ✅  | ✅  |
 
 ---
 
