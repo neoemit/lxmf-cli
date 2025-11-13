@@ -44,6 +44,11 @@ class LXMFClient:
         self.stop_event = threading.Event()
         self.show_announces = True
         self.start_time = time.time()
+
+        # Notification settings
+        self.notify_sound = True      # Platform-specific sounds (beeps/melody)
+        self.notify_bell = True       # Terminal bell
+        self.notify_visual = True     # Visual flash effect
         
         # Track pending messages
         self.pending_messages = {}
@@ -395,6 +400,10 @@ class LXMFClient:
                     self.display_name = config.get('display_name', 'Anonymous')
                     self.announce_interval = config.get('announce_interval', 300)
                     self.show_announces = config.get('show_announces', True)
+                    # Load notification settings
+                    self.notify_sound = config.get('notify_sound', True)
+                    self.notify_bell = config.get('notify_bell', True)
+                    self.notify_visual = config.get('notify_visual', True)
                 return
             except Exception as e:
                 self._print_warning(f"Error loading config: {e}")
@@ -457,7 +466,10 @@ class LXMFClient:
             config = {
                 'display_name': self.display_name,
                 'announce_interval': self.announce_interval,
-                'show_announces': self.show_announces
+                'show_announces': self.show_announces,
+                'notify_sound': self.notify_sound,
+                'notify_bell': self.notify_bell,
+                'notify_visual': self.notify_visual
             }
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2)
@@ -745,49 +757,40 @@ class LXMFClient:
         display_name = self.get_lxmf_display_name(clean_hash)
         if display_name:
             print(f"  Display name: {display_name}")
-        
+            
     def list_contacts(self):
         """List all contacts"""
         if not self.contacts:
             print("\nNo contacts saved\n")
             return
         
-        # Get responsive width
-        width = self.get_terminal_width(default=70, max_width=100)
+        import shutil
+        try:
+            width = shutil.get_terminal_size().columns
+        except:
+            width = 80
         
-        # Sort by index
         sorted_contacts = sorted(self.contacts.items(), key=lambda x: x[1].get('index', 999999))
         
-        # Adjust column widths for mobile
-        if width < 80:
-            # Mobile layout - narrower columns
-            name_width = 15
-            display_width = 20
-            print(f"\n{'='*width}")
-            self._print_color("CONTACTS", Fore.CYAN + Style.BRIGHT)
-            print(f"{'='*width}")
-            print(f"{'#':<4} {'Name':<{name_width}} {'Display':<{display_width}}")
-            print(f"{'-'*4} {'-'*name_width} {'-'*display_width}")
-            
+        sep_width = min(width, 90)
+        print(f"\n{'='*sep_width}")
+        self._print_color("CONTACTS", Fore.CYAN + Style.BRIGHT)
+        print(f"{'='*sep_width}")
+        
+        if width < 70:
+            # Mobile: Vertical layout
             for name, data in sorted_contacts:
                 idx = data.get('index', '?')
                 hash_str = data['hash']
                 display_name = self.get_lxmf_display_name(hash_str)
                 
-                # Truncate names
-                name_shown = name[:name_width-2] + ".." if len(name) > name_width else name
-                
+                print(f"\n[{idx}] {Fore.CYAN}{name}{Style.RESET_ALL}")
                 if display_name:
-                    display_shown = display_name[:display_width-2] + ".." if len(display_name) > display_width else display_name
-                    print(f"{idx:<4} {name_shown:<{name_width}} {display_shown:<{display_width}}")
-                else:
-                    print(f"{idx:<4} {name_shown:<{name_width}} {'<unknown>':<{display_width}}")
+                    print(f"    {display_name}")
+                print(f"    {hash_str[:16]}...{hash_str[-8:]}")
         else:
-            # Desktop layout - full width
-            print(f"\n{'='*width}")
-            self._print_color("CONTACTS", Fore.CYAN + Style.BRIGHT)
-            print(f"{'='*width}")
-            print(f"{'#':<5} {'Nickname':<20} {'LXMF Display Name':<30} {'Hash':<32}")
+            # Desktop: Clean table with separators
+            print(f"\n{'#':<5} {'Name':<20} {'Display Name':<30} {'Hash'}")
             print(f"{'-'*5} {'-'*20} {'-'*30} {'-'*32}")
             
             for name, data in sorted_contacts:
@@ -803,8 +806,83 @@ class LXMFClient:
                 else:
                     print(f"{idx:<5} {name_shown:<20} {'<unknown>':<30} {hash_str}")
         
-        print(f"{'='*width}")
-        self._print_color("\n💡 Send using: 's <#> <msg>'", Fore.YELLOW)
+        print(f"{'='*sep_width}")
+        self._print_color("\n💡 Send: 's <#> <msg>'", Fore.YELLOW)
+        print()
+
+    def list_peers(self):
+        """List all announced LXMF peers"""
+        with self.peers_lock:
+            peers_copy = dict(self.announced_peers)
+        
+        if not peers_copy:
+            print("\nNo peers announced yet\n")
+            return
+        
+        import shutil
+        try:
+            width = shutil.get_terminal_size().columns
+        except:
+            width = 80
+        
+        sorted_peers = sorted(peers_copy.items(), key=lambda x: x[1]['index'])
+        
+        sep_width = min(width, 90)
+        print(f"\n{'='*sep_width}")
+        self._print_color("ANNOUNCED PEERS", Fore.CYAN + Style.BRIGHT)
+        print(f"{'='*sep_width}")
+        
+        if width < 70:
+            # Mobile: Vertical layout
+            for hash_str, peer_data in sorted_peers:
+                peer_index = peer_data['index']
+                display_name = peer_data['display_name']
+                last_seen = peer_data['last_seen']
+                
+                time_diff = time.time() - last_seen
+                if time_diff < 60:
+                    time_str = "now"
+                elif time_diff < 3600:
+                    time_str = f"{int(time_diff/60)}m ago"
+                elif time_diff < 86400:
+                    time_str = f"{int(time_diff/3600)}h ago"
+                else:
+                    time_str = f"{int(time_diff/86400)}d ago"
+                
+                is_contact = any(data['hash'].lower() == hash_str for data in self.contacts.values())
+                marker = "★ " if is_contact else ""
+                
+                print(f"\n{marker}[{peer_index}] {Fore.CYAN}{display_name}{Style.RESET_ALL}")
+                print(f"    {time_str}")
+        else:
+            # Desktop: Clean table with separators
+            print(f"\n{'#':<5} {'Display Name':<35} {'Hash':<32} {'Last Seen'}")
+            print(f"{'-'*5} {'-'*35} {'-'*32} {'-'*15}")
+            
+            for hash_str, peer_data in sorted_peers:
+                peer_index = peer_data['index']
+                display_name = peer_data['display_name']
+                last_seen = peer_data['last_seen']
+                
+                time_diff = time.time() - last_seen
+                if time_diff < 60:
+                    time_str = "just now"
+                elif time_diff < 3600:
+                    time_str = f"{int(time_diff/60)}m ago"
+                elif time_diff < 86400:
+                    time_str = f"{int(time_diff/3600)}h ago"
+                else:
+                    time_str = f"{int(time_diff/86400)}d ago"
+                
+                is_contact = any(data['hash'].lower() == hash_str for data in self.contacts.values())
+                marker = "★" if is_contact else " "
+                
+                display_shown = display_name[:33] + ".." if len(display_name) > 35 else display_name
+                
+                print(f"{marker}{peer_index:<4} {display_shown:<35} {hash_str:<32} {time_str}")
+        
+        print(f"{'='*sep_width}")
+        self._print_color("\n💡 sp <#> <msg> | ap <#> [name]", Fore.YELLOW)
         print()
 
     def send_message(self, recipient, content, title=None):
@@ -1014,6 +1092,12 @@ class LXMFClient:
         print(f"  Auto-announce: Every {self.announce_interval}s")
         print(f"  Discovery alerts: {'ON' if self.show_announces else 'OFF'}")
         
+        # Notification settings
+        print(f"\n{Fore.MAGENTA}Notifications:{Style.RESET_ALL}")
+        print(f"  Sound: {'ON' if self.notify_sound else 'OFF'}")
+        print(f"  Terminal Bell: {'ON' if self.notify_bell else 'OFF'}")
+        print(f"  Visual Flash: {'ON' if self.notify_visual else 'OFF'}")
+        
         # Statistics
         with self.messages_lock:
             total_messages = len(self.messages)
@@ -1031,7 +1115,7 @@ class LXMFClient:
         print(f"  Total messages: {total_messages} (↑{sent} ↓{received})")
         
         # System info
-        print(f"\n{Fore.MAGENTA}System:{Style.RESET_ALL}")
+        print(f"\n{Fore.RED}System:{Style.RESET_ALL}")
         uptime = time.time() - self.start_time
         hours = int(uptime // 3600)
         minutes = int((uptime % 3600) // 60)
@@ -1301,158 +1385,189 @@ class LXMFClient:
 
     def _show_main_help(self):
         """Show main help menu with categories"""
+        import shutil
+        
+        try:
+            width = shutil.get_terminal_size().columns
+            is_mobile = width < 70
+        except:
+            width = 80
+            is_mobile = False
+        
         if COLOR_ENABLED:
-            # Get responsive width
-            width = self.get_terminal_width(default=60, max_width=71)
-            border = "═" * width
-            
-            print(f"\n{Fore.WHITE}╔{border}╗")
-            print(f"║{'LXMF CLIENT COMMANDS'.center(width)}║")
-            print(f"╠{border}╣")
-            
-            # Messaging commands
-            print(f"║{' ' * width}║")
-            print(f"║ {Fore.CYAN}📨 MESSAGING{Fore.WHITE}{' ' * (width - 13)}║")
-            print(f"║ {'-' * (width - 2)} ║")
-            
-            commands = [
-                ("send <#> <msg>", "s", "Send message"),
-                ("reply <msg>", "re", "Reply to last"),
-                ("messages [n]", "m", "Recent messages"),
-                ("messages list", "", "All conversations"),
-                ("messages user <#>", "", "View conversation"),
-            ]
-            
-            for long_cmd, short_cmd, description in commands:
-                if short_cmd:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE} {Fore.YELLOW}({short_cmd}){Fore.WHITE}"
-                    cmd_len = len(long_cmd) + len(short_cmd) + 4
-                else:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE}"
-                    cmd_len = len(long_cmd)
+            if is_mobile:
+                # === MOBILE LAYOUT ===
+                print(f"\n{Fore.WHITE}{'='*width}")
+                print(f"LXMF CLIENT COMMANDS".center(width))
+                print(f"{'='*width}{Style.RESET_ALL}\n")
                 
-                # Truncate description if needed
-                desc_space = width - cmd_len - 5
-                if len(description) > desc_space:
-                    description = description[:desc_space-2] + ".."
+                # Messaging
+                self._print_color("📨 MESSAGING", Fore.CYAN + Style.BRIGHT)
+                print(f"{'-'*width}")
+                commands = [
+                    ("send <#> <msg>", "s"),
+                    ("reply <msg>", "re"),
+                    ("messages [n]", "m"),
+                    ("messages list", ""),
+                    ("messages user <#>", ""),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
                 
-                padding = " " * (width - cmd_len - len(description) - 4)
-                print(f"║ {cmd_display} {description}{padding} ║")
-            
-            # Contacts & Peers
-            print(f"║{' ' * width}║")
-            print(f"║ {Fore.GREEN}👥 CONTACTS & PEERS{Fore.WHITE}{' ' * (width - 20)}║")
-            print(f"║ {'-' * (width - 2)} ║")
-            
-            commands = [
-                ("contacts", "c", "List contacts"),
-                ("add <name> <hash>", "a", "Add contact"),
-                ("remove <name>", "rm", "Remove contact"),
-                ("peers", "p", "List peers"),
-                ("sendpeer <#> <msg>", "sp", "Send to peer"),
-                ("addpeer <#> [name]", "ap", "Add to contacts"),
-            ]
-            
-            for long_cmd, short_cmd, description in commands:
-                if short_cmd:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE} {Fore.YELLOW}({short_cmd}){Fore.WHITE}"
-                    cmd_len = len(long_cmd) + len(short_cmd) + 4
-                else:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE}"
-                    cmd_len = len(long_cmd)
+                # Contacts & Peers
+                print(f"\n{Fore.GREEN}👥 CONTACTS & PEERS{Style.RESET_ALL}")
+                print(f"{'-'*width}")
+                commands = [
+                    ("contacts", "c"),
+                    ("add <name> <hash>", "a"),
+                    ("remove <name>", "rm"),
+                    ("peers", "p"),
+                    ("sendpeer <#> <msg>", "sp"),
+                    ("addpeer <#> [name]", "ap"),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
                 
-                desc_space = width - cmd_len - 5
-                if len(description) > desc_space:
-                    description = description[:desc_space-2] + ".."
+                # Info & Stats
+                print(f"\n{Fore.MAGENTA}📊 INFO & STATS{Style.RESET_ALL}")
+                print(f"{'-'*width}")
+                commands = [
+                    ("stats", "st"),
+                    ("status", ""),
+                    ("address", "addr"),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
                 
-                padding = " " * (width - cmd_len - len(description) - 4)
-                print(f"║ {cmd_display} {description}{padding} ║")
-            
-            # Info & Stats
-            print(f"║{' ' * width}║")
-            print(f"║ {Fore.MAGENTA}📊 INFO & STATS{Fore.WHITE}{' ' * (width - 16)}║")
-            print(f"║ {'-' * (width - 2)} ║")
-            
-            commands = [
-                ("stats", "st", "Messaging stats"),
-                ("status", "", "System status"),
-                ("address", "addr", "Your address"),
-            ]
-            
-            for long_cmd, short_cmd, description in commands:
-                if short_cmd:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE} {Fore.YELLOW}({short_cmd}){Fore.WHITE}"
-                    cmd_len = len(long_cmd) + len(short_cmd) + 4
-                else:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE}"
-                    cmd_len = len(long_cmd)
+                # Settings
+                print(f"\n{Fore.YELLOW}⚙️  SETTINGS{Style.RESET_ALL}")
+                print(f"{'-'*width}")
+                commands = [
+                    ("settings", "set"),
+                    ("name <name>", "n"),
+                    ("interval <sec>", "i"),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
                 
-                desc_space = width - cmd_len - 5
-                if len(description) > desc_space:
-                    description = description[:desc_space-2] + ".."
+                # System
+                print(f"\n{Fore.RED}🖥️  SYSTEM{Style.RESET_ALL}")
+                print(f"{'-'*width}")
+                commands = [
+                    ("clear", "cls"),
+                    ("restart", "r"),
+                    ("help", "h"),
+                    ("quit", "q"),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
                 
-                padding = " " * (width - cmd_len - len(description) - 4)
-                print(f"║ {cmd_display} {description}{padding} ║")
+                print(f"\n{Fore.YELLOW}💡 'settings' for options{Style.RESET_ALL}\n")
             
-            # Settings
-            print(f"║{' ' * width}║")
-            print(f"║ {Fore.YELLOW}⚙️  SETTINGS{Fore.WHITE}{' ' * (width - 13)}║")
-            print(f"║ {'-' * (width - 2)} ║")
-            
-            commands = [
-                ("settings", "set", "Settings menu"),
-                ("name <name>", "n", "Change name"),
-                ("interval <sec>", "i", "Announce interval"),
-            ]
-            
-            for long_cmd, short_cmd, description in commands:
-                if short_cmd:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE} {Fore.YELLOW}({short_cmd}){Fore.WHITE}"
-                    cmd_len = len(long_cmd) + len(short_cmd) + 4
-                else:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE}"
-                    cmd_len = len(long_cmd)
+            else:
+                # === DESKTOP LAYOUT (clean separator lines) ===
+                print(f"\n{Fore.WHITE}{'='*70}")
+                print(f"LXMF CLIENT COMMANDS".center(70))
+                print(f"{'='*70}{Style.RESET_ALL}\n")
                 
-                desc_space = width - cmd_len - 5
-                if len(description) > desc_space:
-                    description = description[:desc_space-2] + ".."
+                # Messaging commands
+                self._print_color("📨 MESSAGING", Fore.CYAN + Style.BRIGHT)
+                print(f"{'-'*70}")
+                commands = [
+                    ("send <#> <msg>", "s", "Send message"),
+                    ("reply <msg>", "re", "Reply to last"),
+                    ("messages [n]", "m", "Recent messages"),
+                    ("messages list", "", "All conversations"),
+                    ("messages user <#>", "", "View conversation"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
                 
-                padding = " " * (width - cmd_len - len(description) - 4)
-                print(f"║ {cmd_display} {description}{padding} ║")
-            
-            # System
-            print(f"║{' ' * width}║")
-            print(f"║ {Fore.RED}🖥️  SYSTEM{Fore.WHITE}{' ' * (width - 13)}║")
-            print(f"║ {'-' * (width - 2)} ║")
-            
-            commands = [
-                ("clear", "cls", "Clear screen"),
-                ("restart", "r", "Restart client"),
-                ("help", "h", "Show help"),
-                ("quit", "q", "Exit"),
-            ]
-            
-            for long_cmd, short_cmd, description in commands:
-                if short_cmd:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE} {Fore.YELLOW}({short_cmd}){Fore.WHITE}"
-                    cmd_len = len(long_cmd) + len(short_cmd) + 4
-                else:
-                    cmd_display = f"{Fore.CYAN}{long_cmd}{Fore.WHITE}"
-                    cmd_len = len(long_cmd)
+                # Contacts & Peers
+                print(f"\n{Fore.GREEN}👥 CONTACTS & PEERS{Style.RESET_ALL}")
+                print(f"{'-'*70}")
+                commands = [
+                    ("contacts", "c", "List contacts"),
+                    ("add <name> <hash>", "a", "Add contact"),
+                    ("remove <name>", "rm", "Remove contact"),
+                    ("peers", "p", "List peers"),
+                    ("sendpeer <#> <msg>", "sp", "Send to peer"),
+                    ("addpeer <#> [name]", "ap", "Add to contacts"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
                 
-                desc_space = width - cmd_len - 5
-                if len(description) > desc_space:
-                    description = description[:desc_space-2] + ".."
+                # Info & Stats
+                print(f"\n{Fore.MAGENTA}📊 INFO & STATS{Style.RESET_ALL}")
+                print(f"{'-'*70}")
+                commands = [
+                    ("stats", "st", "Messaging stats"),
+                    ("status", "", "System status"),
+                    ("address", "addr", "Your address"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
                 
-                padding = " " * (width - cmd_len - len(description) - 4)
-                print(f"║ {cmd_display} {description}{padding} ║")
-            
-            print(f"╚{border}╝{Style.RESET_ALL}")
-            print(f"\n{Fore.YELLOW}💡 Type 'settings' for options{Style.RESET_ALL}\n")
+                # Settings
+                print(f"\n{Fore.YELLOW}⚙️  SETTINGS{Style.RESET_ALL}")
+                print(f"{'-'*70}")
+                commands = [
+                    ("settings", "set", "Settings menu"),
+                    ("name <name>", "n", "Change name"),
+                    ("interval <sec>", "i", "Announce interval"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
+                
+                # System
+                print(f"\n{Fore.RED}🖥️  SYSTEM{Style.RESET_ALL}")
+                print(f"{'-'*70}")
+                commands = [
+                    ("clear", "cls", "Clear screen"),
+                    ("restart", "r", "Restart client"),
+                    ("help", "h", "Show help"),
+                    ("quit", "q", "Exit"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
+                
+                print(f"\n{Fore.YELLOW}💡 Type 'settings' for options{Style.RESET_ALL}")
+                print(f"{'='*70}\n")
         
         else:
-            # Simplified fallback
-            print("\nLXMF CLIENT - Type 'help' for commands\n")
+            # No color fallback
+            print("\nLXMF CLI - Commands available")
+            print("Type 'help' for full list\n")
 
     def show_settings_menu(self):
         """Show interactive settings menu"""
@@ -1461,13 +1576,19 @@ class LXMFClient:
             self._print_color("SETTINGS MENU", Fore.YELLOW + Style.BRIGHT)
             print(f"{'='*70}")
             
-            print(f"\n{Fore.CYAN}Current Settings:{Style.RESET_ALL}")
+            print(f"\n{Fore.CYAN}General Settings:{Style.RESET_ALL}")
             print(f"  [1] Display Name: {Fore.GREEN}{self.display_name}{Style.RESET_ALL}")
             print(f"  [2] Announce Interval: {Fore.GREEN}{self.announce_interval}s{Style.RESET_ALL}")
             print(f"  [3] Discovery Alerts: {Fore.GREEN}{'ON' if self.show_announces else 'OFF'}{Style.RESET_ALL}")
             
+            print(f"\n{Fore.MAGENTA}Notification Settings:{Style.RESET_ALL}")
+            print(f"  [4] Sound (beeps/melody): {Fore.GREEN}{'ON' if self.notify_sound else 'OFF'}{Style.RESET_ALL}")
+            print(f"  [5] Terminal Bell: {Fore.GREEN}{'ON' if self.notify_bell else 'OFF'}{Style.RESET_ALL}")
+            print(f"  [6] Visual Flash: {Fore.GREEN}{'ON' if self.notify_visual else 'OFF'}{Style.RESET_ALL}")
+            
             print(f"\n{Fore.YELLOW}Options:{Style.RESET_ALL}")
-            print("  [1-3] - Change setting")
+            print("  [1-6] - Change setting")
+            print("  [t]   - Test notification")
             print("  [b]   - Back to main menu")
             print("  [s]   - Save and exit")
             
@@ -1518,6 +1639,34 @@ class LXMFClient:
                 status = "enabled" if self.show_announces else "disabled"
                 self._print_success(f"Discovery alerts {status}")
             
+            elif choice == '4':
+                # Toggle sound notifications
+                self.notify_sound = not self.notify_sound
+                self.save_config()
+                status = "enabled" if self.notify_sound else "disabled"
+                self._print_success(f"Sound notifications {status}")
+            
+            elif choice == '5':
+                # Toggle terminal bell
+                self.notify_bell = not self.notify_bell
+                self.save_config()
+                status = "enabled" if self.notify_bell else "disabled"
+                self._print_success(f"Terminal bell {status}")
+            
+            elif choice == '6':
+                # Toggle visual flash
+                self.notify_visual = not self.notify_visual
+                self.save_config()
+                status = "enabled" if self.notify_visual else "disabled"
+                self._print_success(f"Visual flash {status}")
+            
+            elif choice == 't':
+                # Test notification
+                print("\nTesting notification...")
+                self.notify_new_message()
+                time.sleep(1)
+                self._print_success("Test complete!")
+            
             elif choice in ['b', 'back']:
                 break
             
@@ -1533,86 +1682,6 @@ class LXMFClient:
         """Resolve command aliases to full commands"""
         return self.command_aliases.get(cmd, cmd)
                 
-    def list_peers(self):
-        """List all announced LXMF peers"""
-        with self.peers_lock:
-            peers_copy = dict(self.announced_peers)
-        
-        if not peers_copy:
-            print("\nNo LXMF peers announced yet\n")
-            return
-        
-        # Get responsive width
-        width = self.get_terminal_width(default=70, max_width=95)
-        
-        sorted_peers = sorted(peers_copy.items(), key=lambda x: x[1]['index'])
-        
-        print(f"\n{'='*width}")
-        self._print_color("ANNOUNCED PEERS", Fore.CYAN + Style.BRIGHT)
-        print(f"{'='*width}")
-        
-        if width < 80:
-            # Mobile layout
-            print(f"{'#':<4} {'Display Name':<25} {'Last Seen':<12}")
-            print(f"{'-'*4} {'-'*25} {'-'*12}")
-            
-            for hash_str, peer_data in sorted_peers:
-                peer_index = peer_data['index']
-                display_name = peer_data['display_name']
-                last_seen = peer_data['last_seen']
-                
-                time_diff = time.time() - last_seen
-                if time_diff < 60:
-                    time_str = "now"
-                elif time_diff < 3600:
-                    time_str = f"{int(time_diff/60)}m"
-                elif time_diff < 86400:
-                    time_str = f"{int(time_diff/3600)}h"
-                else:
-                    time_str = f"{int(time_diff/86400)}d"
-                
-                is_contact = any(data['hash'].lower() == hash_str for data in self.contacts.values())
-                marker = "★" if is_contact else " "
-                
-                display_shown = display_name[:23] + ".." if len(display_name) > 25 else display_name
-                
-                print(f"{marker}{peer_index:<3} {display_shown:<25} {time_str:<12}")
-        else:
-            # Desktop layout
-            print(f"{'#':<5} {'Display Name':<35} {'Hash':<32} {'Last Seen':<15}")
-            print(f"{'-'*5} {'-'*35} {'-'*32} {'-'*15}")
-            
-            for hash_str, peer_data in sorted_peers:
-                peer_index = peer_data['index']
-                display_name = peer_data['display_name']
-                last_seen = peer_data['last_seen']
-                
-                time_diff = time.time() - last_seen
-                if time_diff < 60:
-                    time_str = "just now"
-                elif time_diff < 3600:
-                    minutes = int(time_diff / 60)
-                    time_str = f"{minutes}m ago"
-                elif time_diff < 86400:
-                    hours = int(time_diff / 3600)
-                    time_str = f"{hours}h ago"
-                else:
-                    days = int(time_diff / 86400)
-                    time_str = f"{days}d ago"
-                
-                is_contact = any(data['hash'].lower() == hash_str for data in self.contacts.values())
-                marker = "★" if is_contact else " "
-                
-                display_shown = display_name[:33] + ".." if len(display_name) > 35 else display_name
-                
-                print(f"{marker}{peer_index:<4} {display_shown:<35} {hash_str:<32} {time_str:<15}")
-        
-        print(f"{'='*width}")
-        self._print_color("\n💡 Commands:", Fore.YELLOW)
-        print(f"  sp <#> <msg> - Send to peer")
-        print(f"  ap <#> [name] - Add to contacts")
-        print()
-
     def send_to_peer(self, peer_index, content, title=None):
         """Send message to a peer by index number"""
         with self.peers_lock:
@@ -1679,96 +1748,102 @@ class LXMFClient:
             self._print_error("Peer number must be a valid number")
 
     def notify_new_message(self):
-        """Visual and audio notification for new message - cross-platform with Termux support"""
+        """Visual and audio notification for new message - respects user settings"""
         import shutil
         import platform
-        import os
         
         # === SOUND NOTIFICATION ===
-        system = platform.system()
-        is_termux = os.path.exists('/data/data/com.termux')
-        
-        try:
-            if is_termux:
-                # === TERMUX/ANDROID SPECIFIC ===
-                try:
-                    # Vibration pattern - short bursts matching melody
-                    os.system('termux-vibrate -d 80 2>/dev/null &')
-                    time.sleep(0.09)
-                    os.system('termux-vibrate -d 80 2>/dev/null &')
-                    time.sleep(0.09)
-                    os.system('termux-vibrate -d 80 2>/dev/null &')
-                    time.sleep(0.09)
-                    os.system('termux-vibrate -d 150 2>/dev/null &')  # Longer vibration
-                    time.sleep(0.16)
-                    os.system('termux-vibrate -d 100 2>/dev/null &')
+        if self.notify_sound or self.notify_bell:
+            system = platform.system()
+            is_termux = os.path.exists('/data/data/com.termux')
+            
+            try:
+                if is_termux:
+                    # === TERMUX/ANDROID ===
+                    if self.notify_sound:
+                        try:
+                            # Vibration pattern
+                            os.system('termux-vibrate -d 80 2>/dev/null &')
+                            time.sleep(0.09)
+                            os.system('termux-vibrate -d 80 2>/dev/null &')
+                            time.sleep(0.09)
+                            os.system('termux-vibrate -d 80 2>/dev/null &')
+                            time.sleep(0.09)
+                            os.system('termux-vibrate -d 150 2>/dev/null &')
+                            time.sleep(0.16)
+                            os.system('termux-vibrate -d 100 2>/dev/null &')
+                            
+                            # System notification
+                            os.system('termux-notification --title "📨 LXMF Message" --content "New message received" --sound 2>/dev/null &')
+                        except:
+                            pass
                     
-                    # System notification
-                    os.system('termux-notification --title "📨 LXMF Message" --content "New message received" --sound 2>/dev/null &')
-                except:
-                    pass
+                    # Terminal bells
+                    if self.notify_bell:
+                        for _ in range(3):
+                            print("\a", end="", flush=True)
+                            time.sleep(0.1)
                 
-                # Terminal bells as backup
-                for _ in range(3):
-                    print("\a", end="", flush=True)
-                    time.sleep(0.1)
+                elif system == 'Windows':
+                    if self.notify_sound:
+                        try:
+                            import winsound
+                            # Musical melody
+                            melody = [
+                                (523, 80),    # C5
+                                (659, 80),    # E5
+                                (784, 80),    # G5
+                                (1047, 150),  # C6
+                                (784, 100),   # G5
+                            ]
+                            
+                            for freq, duration in melody:
+                                winsound.Beep(freq, duration)
+                                time.sleep(0.01)
+                            
+                        except:
+                            if self.notify_bell:
+                                for _ in range(3):
+                                    print("\a", end="", flush=True)
+                                    time.sleep(0.1)
+                    else:
+                        if self.notify_bell:
+                            for _ in range(3):
+                                print("\a", end="", flush=True)
+                                time.sleep(0.1)
+                
+                elif system == 'Linux':
+                    if self.notify_sound:
+                        try:
+                            # Try system sound
+                            result = os.system('paplay /usr/share/sounds/freedesktop/stereo/message-new-instant.oga 2>/dev/null &')
+                            
+                            if result != 0:
+                                os.system('beep -f 523 -l 80 -n -f 659 -l 80 -n -f 784 -l 80 -n -f 1047 -l 150 -n -f 784 -l 100 2>/dev/null &')
+                        except:
+                            pass
+                    
+                    if self.notify_bell:
+                        for _ in range(2):
+                            print("\a", end="", flush=True)
+                            time.sleep(0.15)
+                
+                else:
+                    # Generic/macOS - terminal bell only
+                    if self.notify_bell:
+                        for _ in range(3):
+                            print("\a", end="", flush=True)
+                            time.sleep(0.1)
             
-            elif system == 'Windows':
-                try:
-                    import winsound
-                    # Pleasant notification melody - fast version
-                    melody = [
-                        (523, 80),    # C5
-                        (659, 80),    # E5
-                        (784, 80),    # G5
-                        (1047, 150),  # C6 (emphasis)
-                        (784, 100),   # G5
-                    ]
-                    
-                    for freq, duration in melody:
-                        winsound.Beep(freq, duration)
-                        time.sleep(0.01)
-                    
-                except:
-                    # Fallback to terminal bell
+            except Exception as e:
+                # Fallback to bell if available
+                if self.notify_bell:
                     for _ in range(3):
                         print("\a", end="", flush=True)
                         time.sleep(0.1)
-            
-            elif system == 'Linux':
-                try:
-                    # Try system sound first
-                    result = os.system('paplay /usr/share/sounds/freedesktop/stereo/message-new-instant.oga 2>/dev/null &')
-                    
-                    if result != 0:
-                        # If paplay fails, try beep command with melody
-                        os.system('beep -f 523 -l 80 -n -f 659 -l 80 -n -f 784 -l 80 -n -f 1047 -l 150 -n -f 784 -l 100 2>/dev/null &')
-                    
-                    # Also do terminal bells
-                    for _ in range(2):
-                        print("\a", end="", flush=True)
-                        time.sleep(0.1)
-                        
-                except:
-                    # Fallback to terminal bell
-                    for _ in range(3):
-                        print("\a", end="", flush=True)
-                        time.sleep(0.1)
-            
-            else:
-                # Generic/macOS - terminal bell
-                for _ in range(3):
-                    print("\a", end="", flush=True)
-                    time.sleep(0.1)
-        
-        except Exception as e:
-            # Ultimate fallback
-            for _ in range(3):
-                print("\a", end="", flush=True)
-                time.sleep(0.1)
         
         # === VISUAL NOTIFICATION ===
-        if COLOR_ENABLED:
+        if self.notify_visual and COLOR_ENABLED:
             try:
                 terminal_width = shutil.get_terminal_size().columns
             except:
@@ -1789,6 +1864,7 @@ class LXMFClient:
                 time.sleep(duration)
             
             # Message flash with emoji
+            is_termux = os.path.exists('/data/data/com.termux')
             if is_termux:
                 msg = " 📱 NEW MESSAGE! "
             else:
@@ -1799,9 +1875,9 @@ class LXMFClient:
             
             # Clear
             print(f"\r{' ' * terminal_width}", end="\r", flush=True)
-        else:
+        elif self.notify_visual and not COLOR_ENABLED:
             print("\n>>> NEW MESSAGE RECEIVED <<<\n")
-    
+
     def shutdown(self):
         """Clean shutdown"""
         print("\nShutting down...")
