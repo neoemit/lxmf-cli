@@ -111,6 +111,7 @@ class LXMFClient:
             'q': 'quit',
             'set': 'settings',
             'bl': 'blacklist',
+            'ann': 'announce',
         }
         
         os.makedirs(storage_path, exist_ok=True)
@@ -1956,7 +1957,19 @@ class LXMFClient:
                 commands = [
                     ("stats", "st"),
                     ("status", ""),
+                ]
+                for cmd, alias in commands:
+                    if alias:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL} {Fore.YELLOW}({alias}){Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}{cmd}{Style.RESET_ALL}")
+
+                # Network
+                print(f"\n{Fore.BLUE}🌐 NETWORK{Style.RESET_ALL}")
+                print(f"{'-'*width}")
+                commands = [
                     ("address", "addr"),
+                    ("announce", "ann"),
                 ]
                 for cmd, alias in commands:
                     if alias:
@@ -2053,7 +2066,19 @@ class LXMFClient:
                 commands = [
                     ("stats", "st", "Messaging stats"),
                     ("status", "", "System status"),
-                    ("address", "addr", "Your address"),
+                ]
+                for long_cmd, short_cmd, description in commands:
+                    if short_cmd:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL} {Fore.YELLOW}({short_cmd:<3}){Style.RESET_ALL} {description}")
+                    else:
+                        print(f"{Fore.CYAN}{long_cmd:<20}{Style.RESET_ALL}      {description}")
+
+                # Network 
+                print(f"\n{Fore.BLUE}🌐 NETWORK{Style.RESET_ALL}")
+                print(f"{'-'*70}")
+                commands = [
+                    ("address", "addr", "Your LXMF address info"),
+                    ("announce", "ann", "Announce manually now!"),
                 ]
                 for long_cmd, short_cmd, description in commands:
                     if short_cmd:
