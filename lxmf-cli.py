@@ -643,6 +643,12 @@ class LXMFClient:
                                     # Get peer index for this new peer
                                     peer_idx = self.client.announced_peers[clean_hash]['index']
                                     print(f"💡 Quick save: 'ap {peer_idx}' | Send: 'sp {peer_idx} <msg>'")
+
+                                if is_contact:
+                                    # Get peer index for this new peer
+                                    peer_idx = self.client.announced_peers[clean_hash]['index']
+                                    print(f"💡 Quick Send: 'sp {peer_idx} <msg>'")
+
                 
                 except Exception:
                     pass
@@ -1355,7 +1361,7 @@ class LXMFClient:
                 print(f"\n[{idx}] {Fore.CYAN}{name} - {display_name}{Style.RESET_ALL}")
                 #if display_name:
                 #    print(f"    {display_name}")
-                print(f"    {hash_str}")
+                print(f"      {hash_str}")
         else:
             # Desktop: Clean table with separators
             print(f"\n{'#':<5} {'Name':<20} {'Display Name':<30} {'Hash'}")
