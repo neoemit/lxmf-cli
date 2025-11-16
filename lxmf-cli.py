@@ -1352,10 +1352,10 @@ class LXMFClient:
                 hash_str = data['hash']
                 display_name = self.get_lxmf_display_name(hash_str)
                 
-                print(f"\n[{idx}] {Fore.CYAN}{name}{Style.RESET_ALL}")
-                if display_name:
-                    print(f"    {display_name}")
-                print(f"    {hash_str[:16]}...{hash_str[-8:]}")
+                print(f"\n[{idx}] {Fore.CYAN}{name} - {display_name}{Style.RESET_ALL}")
+                #if display_name:
+                #    print(f"    {display_name}")
+                print(f"    🔗 {hash_str}")
         else:
             # Desktop: Clean table with separators
             print(f"\n{'#':<5} {'Name':<20} {'Display Name':<30} {'Hash'}")
@@ -1420,8 +1420,8 @@ class LXMFClient:
                 is_contact = any(data['hash'].lower() == hash_str for data in self.contacts.values())
                 marker = "★ " if is_contact else ""
                 
-                print(f"\n{marker}[{peer_index}] {Fore.CYAN}{display_name}{Style.RESET_ALL}")
-                print(f"    {time_str}")
+                print(f"\n{marker}[{peer_index}] {Fore.CYAN}{display_name}{Style.RESET_ALL}  •  {time_str}")
+                #print(f"    {time_str}")
         else:
             # Desktop: Clean table with separators
             print(f"\n{'#':<5} {'Display Name':<35} {'Hash':<32} {'Last Seen'}")
