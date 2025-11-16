@@ -990,9 +990,9 @@ class LXMFClient:
             
             # SIMPLE PRINTS - NO COLOR CODES IN STRINGS
             print(f"\n{'─'*width}")
-            print(f"📨 NEW MESSAGE from {sender_display}")
+            timestamp = datetime.fromtimestamp(message.timestamp).strftime('%H:%M:%S')
+            print(f"📨 [{timestamp}] NEW MESSAGE from: {self.format_contact_display_short(msg_data['source_hash'])}")
             print(f"{'─'*width}")
-            print(f"Time: {datetime.fromtimestamp(message.timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
             if title:
                 print(f"Title: {title}")
             if content:
