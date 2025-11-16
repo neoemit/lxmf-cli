@@ -103,7 +103,10 @@ git clone https://github.com/fr33n0w/lxmf-cli.git
 cd lxmf-cli
 
 # Install dependencies
-pip install rns lxmf colorama
+pip install rns lxmf colorama prompt_toolkit
+
+or:
+pip install -r requirements.txt
 
 # Run the client
 python lxmf-cli.py
@@ -111,6 +114,9 @@ python lxmf-cli.py
 
 ### Termux/Android Installation
 ```bash
+# NOTE: The Original and Updated Termux is on F-Droid store or github,
+# download from here and NOT from the play store! info: -> https://termux.dev/en/
+
 # Update packages
 pkg update && pkg upgrade
 
@@ -118,11 +124,13 @@ pkg update && pkg upgrade
 pkg install python git
 
 # Install required Python packages
-pip install rns lxmf colorama
+pip install rns lxmf colorama prompt_toolkit
+or:
+pip install -r requirements.txt
 
 # Optional: Install termux-api for notifications and vibration
 pkg install termux-api
-# Also install Termux:API app from F-Droid or Play Store
+# Also install Termux:API app from F-Droid
 
 # Clone and run
 git clone https://github.com/fr33n0w/lxmf-cli.git
