@@ -636,7 +636,8 @@ class LXMFClient:
                                 is_contact = self.client.get_contact_name_by_hash(clean_hash) != clean_hash
                                 
                                 # Use plain text - no ANSI codes in background threads
-                                print(f"\n📡 New Announce: {display_name} {hash_str}")
+                                print(f"\n📡 New Announce: {display_name}")
+                                print(f"▶ {hash_str}")
                                 
                                 if not is_contact:
                                     # Get peer index for this new peer
